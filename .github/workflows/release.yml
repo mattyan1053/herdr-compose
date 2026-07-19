@@ -1,0 +1,75 @@
+name: Release on merge to main
+
+on:
+  push:
+    branches: [main]
+
+# Avoid overlapping runs racing to create the same tag.
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute next version
+        id: version
+        run: |
+          set -euo pipefail
+
+          # Latest v* tag by semver, or empty if none exist yet.
+          latest="$(git tag --list 'v*' --sort=-v:refname | head -n1)"
+
+          if [ -z "$latest" ]; then
+            # No release yet: seed from herdr-plugin.toml's version field.
+            base="$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' herdr-plugin.toml | head -n1)"
+            base="${base:-0.1.0}"
+            next="v${base}"
+            echo "No existing tag; seeding first release from herdr-plugin.toml: $next"
+          else
+            # Increment the patch component of the latest tag.
+            ver="${latest#v}"
+            IFS='.' read -r major minor patch <<< "$ver"
+            major="${major:-0}"; minor="${minor:-0}"; patch="${patch:-0}"
+            next="v${major}.${minor}.$((patch + 1))"
+            echo "Latest tag $latest; next release: $next"
+          fi
+
+          echo "tag=$next" >> "$GITHUB_OUTPUT"
+          echo "prev=$latest" >> "$GITHUB_OUTPUT"
+
+      - name: Create tag and GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+          PREV: ${{ steps.version.outputs.prev }}
+        run: |
+          set -euo pipefail
+
+          if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+            echo "Tag ${TAG} already exists; skipping."
+            exit 0
+          fi
+
+          git tag "${TAG}"
+          git push origin "${TAG}"
+
+          if [ -n "${PREV}" ]; then
+            gh release create "${TAG}" \
+              --title "${TAG}" \
+              --generate-notes \
+              --notes-start-tag "${PREV}"
+          else
+            gh release create "${TAG}" \
+              --title "${TAG}" \
+              --generate-notes
+          fi
