@@ -11,6 +11,10 @@ Docker Compose status and controls for each [herdr](https://herdr.dev) space.
   (`⏳ up…` / `⏳ stop…`), which matters when `up` sits in an image pull.
 - One keypress per space to `toggle` (stop if running, else start / `up -d`),
   plus explicit `up` / `start` / `stop` / `down` actions.
+- An interactive `ps` **popup** (`compose.ps`): a live `docker compose ps` of the
+  focused space's project, where you pick services and view logs, restart, start,
+  stop, `up -d`, or remove them — a small in-space lazydocker scoped to one
+  project. See [Interactive popup](#interactive-popup).
 - Tears the stack down automatically when a worktree checkout is removed
   (`docker compose -p <project> down`, so it works even though the directory
   is already gone when `worktree.removed` fires).
@@ -31,9 +35,11 @@ state visible per space.
 
 ## Requirements
 
-- herdr ≥ 0.7.0
+- herdr ≥ 0.7.4 (the `ps` popup uses `plugin pane open --placement popup`)
 - Docker Compose v2
 - `bash`, `jq`
+- `fzf` — for the interactive `ps` popup only (the status token and the other
+  actions work without it)
 
 ## Install
 
@@ -68,6 +74,11 @@ command = "compose.toggle"
 key = "prefix+alt+shift+d"
 type = "plugin_action"
 command = "compose.down"
+
+[[keys.command]]
+key = "prefix+alt+p"
+type = "plugin_action"
+command = "compose.ps"
 ```
 
 Actions without a keybinding can be invoked from a shell instead:
@@ -80,6 +91,7 @@ in `herdr plugin log list --plugin compose`.
 
 | Action            | Effect                                              |
 | ----------------- | --------------------------------------------------- |
+| `compose.ps`      | open the interactive `ps` popup (see below)          |
 | `compose.toggle`  | running → `stop` · stopped → `start` · none → `up -d` |
 | `compose.up`      | `docker compose up -d`                              |
 | `compose.start`   | `docker compose start`                              |
@@ -87,6 +99,46 @@ in `herdr plugin log list --plugin compose`.
 | `compose.down`    | `docker compose down`                               |
 | `compose.refresh` | re-report the sidebar status                        |
 | `compose.gc`      | tear down orphaned projects (see below)             |
+
+## Interactive popup
+
+`compose.ps` opens a session-modal popup (via herdr's `plugin pane open
+--placement popup`) showing a live `docker compose ps -a` of the focused space's
+project. The popup runs in the workspace directory, so it always targets that
+space's compose project — no configuration needed.
+
+The keys are modifier-free single letters — the most portable choice across
+terminals (macOS Option/Alt and many phone or SSH terminals mangle Meta keys;
+bare and Shifted letters are bytes every terminal sends). The convention is
+**lowercase = the selection, UPPERCASE = the whole project**:
+
+| Key             | Scope    | Action                                          |
+| --------------- | -------- | ----------------------------------------------- |
+| `Enter` / `l`   | service  | view logs in a pager (`less`)                   |
+| `f`             | service  | follow logs (`logs -f`; `Ctrl-C` returns)       |
+| `r`             | service  | `restart`                                       |
+| `s`             | service  | `start`                                         |
+| `t`             | service  | s`t`op                                          |
+| `u`             | service  | `up -d`                                         |
+| `x`             | service  | `rm -sf` (remove — the per-service `down`)      |
+| `R` `S` `T` `U` | project  | the same, for the whole project                 |
+| `D`             | project  | `down` the whole project (confirm)              |
+| `/`             | —        | filter the list; `Esc` leaves search            |
+| `p`             | —        | toggle the logs preview                         |
+| `Ctrl-L` / `F5` | —        | refresh the list                                |
+| `Tab`           | —        | mark a row (service actions apply to all marked) |
+| `q` / `Ctrl-C`  | —        | close the popup                                 |
+
+Service actions operate on the marked rows (`Tab` to mark several) or, with
+nothing marked, the highlighted row. The uppercase (project) keys ignore the
+selection, so they work even when the list is empty (nothing running yet).
+
+The list is not a live filter by default so the letters can be commands; press
+`/` to filter, `Esc` to return to command mode.
+
+Note on `down`: `docker compose down` is a project-wide operation and takes no
+service argument. The per-service analog — stop and remove a single container —
+is `x` (`docker compose rm -sf <service>`).
 
 ## Orphaned projects
 
