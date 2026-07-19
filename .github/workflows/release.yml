@@ -4,10 +4,10 @@ on:
   push:
     branches: [main]
 
-# Avoid overlapping runs racing to create the same tag.
-concurrency:
-  group: release-main
-  cancel-in-progress: false
+# No concurrency group: each push releases exactly the version pinned in its
+# own commit's herdr-plugin.toml, so distinct versions never collide and must
+# not be dropped. Serializing here would let GitHub cancel a pending run and
+# silently skip an intermediate version's release.
 
 permissions:
   contents: write
@@ -18,11 +18,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Read version from herdr-plugin.toml
+      - name: Decide whether to release
         id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           version="$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' herdr-plugin.toml | head -n1)"
@@ -30,19 +30,23 @@ jobs:
             echo "::error::Could not read version from herdr-plugin.toml"
             exit 1
           fi
-
           tag="v${version}"
-          if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
-            echo "Tag ${tag} already exists; version not bumped. Skipping release."
+
+          # Gate on whether the *release* exists, not just the tag. A partial
+          # failure that created the tag but not the release then self-heals on
+          # rerun, while an unchanged version simply skips.
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release ${tag} already exists; skipping."
             echo "release=false" >> "$GITHUB_OUTPUT"
           else
-            echo "New version ${version}; will release ${tag}."
+            echo "No release for ${tag} yet; will release."
             echo "release=true" >> "$GITHUB_OUTPUT"
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
-      # Creates the tag at the current main commit (which already contains the
-      # matching toml version) and publishes a release with auto-generated notes.
+      # Creates the tag at this commit (which already carries the matching toml
+      # version) if it does not exist, and publishes the release. The action
+      # reuses an existing tag, so this is safe to rerun after a partial failure.
       - name: Create tag and GitHub release
         if: steps.version.outputs.release == 'true'
         uses: softprops/action-gh-release@v2
