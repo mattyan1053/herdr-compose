@@ -1,5 +1,7 @@
 # herdr-compose
 
+English | [日本語](README_ja.md)
+
 Docker Compose status and controls for each [herdr](https://herdr.dev) space.
 
 - Shows the compose project state of every space in the sidebar
