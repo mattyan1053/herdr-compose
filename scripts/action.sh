@@ -33,11 +33,15 @@ run_compose() {
   fi
 }
 
+# Safety net for early exits (failure paths, kill): never leave a stale
+# in-flight marker behind.
+trap 'clear_inflight "$dir"' EXIT
+
 case "$action" in
-  up)    run_compose up -d ;;
-  start) run_compose start ;;
-  stop)  run_compose stop ;;
-  down)  run_compose down ;;
+  up)    report_inflight "$ws" "$dir" up;    run_compose up -d ;;
+  start) report_inflight "$ws" "$dir" start; run_compose start ;;
+  stop)  report_inflight "$ws" "$dir" stop;  run_compose stop ;;
+  down)  report_inflight "$ws" "$dir" down;  run_compose down ;;
   toggle)
     if ! counts=$(compose_counts "$dir"); then
       echo "herdr-compose: no compose project in $dir" >&2
@@ -47,10 +51,13 @@ case "$action" in
     running=${counts%%$'\t'*}
     total=${counts##*$'\t'}
     if (( running > 0 )); then
+      report_inflight "$ws" "$dir" stop
       run_compose stop
     elif (( total > 0 )); then
+      report_inflight "$ws" "$dir" start
       run_compose start
     else
+      report_inflight "$ws" "$dir" up
       run_compose up -d
     fi
     ;;
@@ -61,5 +68,8 @@ case "$action" in
     ;;
 esac
 
+# Clear before the final report — otherwise report_status would just re-emit
+# the transitional token (the EXIT trap only backstops early exits).
+clear_inflight "$dir"
 cache_project_name "$dir"
 report_status "$ws" "$dir"

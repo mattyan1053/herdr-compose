@@ -14,8 +14,42 @@ herdr_cli() {
 
 state_dir() {
   local d="${HERDR_PLUGIN_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/herdr-compose}"
-  mkdir -p "$d/projects"
+  mkdir -p "$d/projects" "$d/inflight"
   printf '%s' "$d"
+}
+
+# ── in-flight operation markers ──────────────────────────────────────────────
+# While an action runs (up can sit in an image pull for minutes) the sidebar
+# should say what is happening (⏳ up…). The marker also stops concurrent
+# report_status calls (workspace.focused fires constantly) from overwriting
+# the transitional token with a half-true computed state. Timestamp inside
+# the file keeps it portable; stale markers (>30 min) are ignored in case a
+# script died without its EXIT trap.
+inflight_file() {
+  printf '%s/inflight/%s' "$(state_dir)" "$(path_key "$1")"
+}
+
+mark_inflight() {
+  printf '%s %s\n' "$(date +%s)" "$2" > "$(inflight_file "$1")"
+}
+
+clear_inflight() {
+  rm -f "$(inflight_file "$1")"
+}
+
+# Prints the in-flight operation name for a directory, or fails if none.
+inflight_op() {
+  local f ts op now
+  f=$(inflight_file "$1")
+  [[ -f "$f" ]] || return 1
+  # `read` exits nonzero on a file without a trailing newline — tolerate it.
+  read -r ts op < "$f" || true
+  now=$(date +%s)
+  if [[ -z "$op" || ! "$ts" =~ ^[0-9]+$ ]] || (( now - ts > 1800 )); then
+    rm -f "$f"
+    return 1
+  fi
+  printf '%s' "$op"
 }
 
 # ── workspace id → directory ─────────────────────────────────────────────────
@@ -89,12 +123,23 @@ has_compose_file() {
 # is the closest CLI approximation of clearing one (the socket API clears
 # with null; revisit if empty strings ever render as stray separators).
 report_status() {
-  local ws="$1" dir="$2" value
-  if ! value=$(compose_token "$dir"); then
+  local ws="$1" dir="$2" value op
+  if op=$(inflight_op "$dir"); then
+    value="⏳ ${op}…"
+  elif ! value=$(compose_token "$dir"); then
     if has_compose_file "$dir"; then value="⚠ error"; else value=""; fi
   fi
   herdr_cli workspace report-metadata "$ws" \
     --source "$SOURCE_NAME" --token "$TOKEN_NAME=$value" >/dev/null 2>&1 || true
+}
+
+# Marks an operation as running and shows it in the sidebar immediately.
+# Callers must clear_inflight afterwards (action.sh does it via an EXIT trap).
+report_inflight() {
+  local ws="$1" dir="$2" op="$3"
+  mark_inflight "$dir" "$op"
+  herdr_cli workspace report-metadata "$ws" \
+    --source "$SOURCE_NAME" --token "$TOKEN_NAME=⏳ ${op}…" >/dev/null 2>&1 || true
 }
 
 # Failures inside herdr are otherwise invisible (no toast, log only), so

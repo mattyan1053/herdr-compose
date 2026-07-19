@@ -7,7 +7,8 @@ Docker Compose status and controls for each [herdr](https://herdr.dev) space.
 - Shows the compose project state of every space in the sidebar
   (`⏵ 10/10` all running · `⏵ 8/10` partial · `⏸ 0/10` stopped ·
   `⏹ down` no containers · nothing at all when the workspace has no compose
-  project).
+  project). While an action runs the token shows the operation in progress
+  (`⏳ up…` / `⏳ stop…`), which matters when `up` sits in an image pull.
 - One keypress per space to `toggle` (stop if running, else start / `up -d`),
   plus explicit `up` / `start` / `stop` / `down` actions.
 - Tears the stack down automatically when a worktree checkout is removed
