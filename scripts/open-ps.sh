@@ -17,8 +17,11 @@ source ./lib.sh
 herdr_bin="${HERDR_BIN_PATH:-herdr}"
 ws="${HERDR_WORKSPACE_ID:-}"
 
-env_args=(--env "HC_PLUGIN_DIR=$plugin_dir")
+# HC_WS + HERDR_BIN_PATH let the popup keep the sidebar token in sync after a
+# mutation (it calls report_status, which action.sh normally owns).
+env_args=(--env "HC_PLUGIN_DIR=$plugin_dir" --env "HERDR_BIN_PATH=$herdr_bin")
 if [[ -n "$ws" ]]; then
+  env_args+=(--env "HC_WS=$ws")
   dir="$(workspace_cwd "$ws")"
   if [[ -n "$dir" && -d "$dir" ]]; then
     env_args+=(--env "HC_DIR=$dir")

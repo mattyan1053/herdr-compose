@@ -46,6 +46,19 @@ if [[ "${1:-}" == "--list" ]]; then
   exit 0
 fi
 
+# ── report mode ──────────────────────────────────────────────────────────────
+# Popup mutations (up/stop/rm/…) run compose directly and so bypass action.sh's
+# report_status; each mutating keybinding chains `--report` to refresh the space
+# token, otherwise the sidebar keeps showing the stale ⏵/⏸/down until next focus.
+if [[ "${1:-}" == "--report" ]]; then
+  if [[ -n "${HC_WS:-}" ]]; then
+    # shellcheck source=lib.sh
+    source "$plugin_dir/scripts/lib.sh"
+    report_status "$HC_WS" "${HC_DIR:-$PWD}" 2>/dev/null || true
+  fi
+  exit 0
+fi
+
 # ── preflight: is there a compose project reachable from here? ────────────────
 if ! docker compose ps -a >/dev/null 2>&1; then
   printf 'herdr-compose: no compose project reachable from\n  %s\n\n' "$PWD"
@@ -68,6 +81,12 @@ header=$'↵/l logs · f follow · r restart · s start · t stop · u up · x r
 # Show any failure and pause, so a bad compose call is not hidden by the reload.
 fail='|| { echo; read -rsn1 -p "failed — press any key " _; }'
 RL='+reload(bash "$HC_SELF" --list)'
+RPT='; bash "$HC_SELF" --report'
+# fzf keybindings are global, so while search is on the command letters would
+# still fire (typing "redis" restarts a service). There is no separate search
+# keymap (junegunn/fzf#3371), so we unbind the command keys on / and rebind
+# them on Esc — while searching they fall through to normal query input.
+CMDKEYS='l,f,r,s,t,u,x,R,S,T,U,D,j,k,p,q'
 
 bash "$self" --list | fzf \
   --ansi --layout=reverse --info=inline --no-sort --multi \
@@ -77,21 +96,21 @@ bash "$self" --list | fzf \
   --preview-window 'right,55%,border-left,wrap,follow' \
   --bind 'j:down,k:up,p:toggle-preview' \
   --bind 'q:abort' \
-  --bind '/:change-prompt(search> )+enable-search' \
-  --bind 'esc:change-prompt(compose> )+disable-search' \
+  --bind "/:unbind($CMDKEYS)+change-prompt(search> )+enable-search" \
+  --bind "esc:rebind($CMDKEYS)+change-prompt(compose> )+disable-search" \
   --bind 'ctrl-l:reload(bash "$HC_SELF" --list)' \
   --bind 'f5:reload(bash "$HC_SELF" --list)' \
   --bind 'enter:execute(docker compose logs --tail=2000 {1} 2>&1 | less -R +G)' \
   --bind 'l:execute(docker compose logs --tail=2000 {1} 2>&1 | less -R +G)' \
   --bind 'f:execute(clear; echo "following {1} — Ctrl-C to return"; echo; docker compose logs -f --tail=100 {1})' \
-  --bind "r:execute(docker compose restart {+1} $fail)$RL" \
-  --bind "s:execute(docker compose start {+1} $fail)$RL" \
-  --bind "t:execute(docker compose stop {+1} $fail)$RL" \
-  --bind "u:execute(docker compose up -d {+1} $fail)$RL" \
-  --bind "x:execute(printf 'rm -sf %s ? [y/N] ' \"{+1}\"; read -r a; [ \"\$a\" = y ] && docker compose rm -sf {+1})$RL" \
-  --bind "R:execute(docker compose restart $fail)$RL" \
-  --bind "S:execute(docker compose start $fail)$RL" \
-  --bind "T:execute(docker compose stop $fail)$RL" \
-  --bind "U:execute(docker compose up -d $fail)$RL" \
-  --bind "D:execute(printf 'compose down (whole project)? [y/N] '; read -r a; [ \"\$a\" = y ] && docker compose down)$RL" \
+  --bind "r:execute(docker compose restart {+1} $fail$RPT)$RL" \
+  --bind "s:execute(docker compose start {+1} $fail$RPT)$RL" \
+  --bind "t:execute(docker compose stop {+1} $fail$RPT)$RL" \
+  --bind "u:execute(docker compose up -d {+1} $fail$RPT)$RL" \
+  --bind "x:execute(printf 'rm -sf %s ? [y/N] ' \"{+1}\"; read -r a; [ \"\$a\" = y ] && docker compose rm -sf {+1}$RPT)$RL" \
+  --bind "R:execute(docker compose restart $fail$RPT)$RL" \
+  --bind "S:execute(docker compose start $fail$RPT)$RL" \
+  --bind "T:execute(docker compose stop $fail$RPT)$RL" \
+  --bind "U:execute(docker compose up -d $fail$RPT)$RL" \
+  --bind "D:execute(printf 'compose down (whole project)? [y/N] '; read -r a; [ \"\$a\" = y ] && docker compose down$RPT)$RL" \
   >/dev/null 2>&1 || true
