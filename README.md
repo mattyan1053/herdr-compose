@@ -93,9 +93,13 @@ Removing a worktree through herdr triggers an automatic
 (`git worktree remove` from a shell or an agent, `rm -rf`, herdr not running)
 emit no event, so their containers would leak. The `gc` sweep covers that
 case: any compose project whose labeled `working_dir` no longer exists on
-disk can never be `up`ed again, so it is torn down. GC runs automatically
-after worktree removals and at most every 10 minutes on workspace focus, and
-can be invoked manually as `compose.gc`.
+disk — or whose labeled compose files are all gone even though the directory
+survives — can never be `up`ed again, so it is torn down. The second
+criterion matters because worktree deletion can half-fail: containers that
+write root-owned files into bind mounts leave a directory herdr cannot
+delete (and no `worktree.removed` event fires on a failed removal). GC runs
+automatically after worktree removals and at most every 10 minutes on
+workspace focus, and can be invoked manually as `compose.gc`.
 
 Teardown of a dead checkout uses `down --volumes`: anonymous volumes are
 never reattached anyway, and a later checkout of the same branch should start

@@ -136,20 +136,38 @@ cached_project_name() {
 # ── orphan GC ────────────────────────────────────────────────────────────────
 # Worktrees removed outside herdr (plain `git worktree remove`, rm -rf, herdr
 # not running) never emit worktree.removed, so their containers leak. Compose
-# stamps every container with its project working_dir label; a project whose
-# working_dir no longer exists on disk cannot be `up`ed again and is safe to
-# tear down. Volumes go too (-v): the checkout is gone for good, and a later
-# same-name checkout should start fresh. External volumes are never removed
-# by compose, so shared data is safe.
+# stamps every container with its project working_dir and config_files labels;
+# a project is an orphan when its working_dir is gone, or when the directory
+# survives but none of its compose files do — the latter happens when a
+# worktree deletion half-fails because containers wrote root-owned files into
+# bind mounts (herdr then can't rm the directory and never emits
+# worktree.removed). Either way the project cannot be `up`ed again and is
+# safe to tear down. Volumes go too (-v): the checkout is gone for good, and
+# a later same-name checkout should start fresh. External volumes are never
+# removed by compose, so shared data is safe.
 compose_gc() {
   docker ps -a \
-    --format '{{.Label "com.docker.compose.project"}}\t{{.Label "com.docker.compose.project.working_dir"}}' \
-    2>/dev/null | sort -u | while IFS=$'\t' read -r name wdir; do
+    --format '{{.Label "com.docker.compose.project"}}\t{{.Label "com.docker.compose.project.working_dir"}}\t{{.Label "com.docker.compose.project.config_files"}}' \
+    2>/dev/null | sort -u | while IFS=$'\t' read -r name wdir cfgs; do
       [[ -n "$name" && -n "$wdir" ]] || continue
-      [[ -d "$wdir" ]] && continue
+      if [[ -d "$wdir" ]] && compose_config_present "$cfgs"; then continue; fi
       docker compose -p "$name" down --volumes --remove-orphans >/dev/null 2>&1 || true
       rm -f "$(state_dir)/projects/$(path_key "$wdir")"
     done
+}
+
+# config_files is a comma-separated path list. "Present" when at least one
+# listed file still exists; an empty label counts as present so projects
+# started in exotic ways (stdin config, very old compose) are never reaped
+# while their directory is alive.
+compose_config_present() {
+  local cfgs="$1" f
+  [[ -n "$cfgs" ]] || return 0
+  local IFS=','
+  for f in $cfgs; do
+    [[ -f "$f" ]] && return 0
+  done
+  return 1
 }
 
 # Focus events fire constantly; sweep at most every 10 minutes.
