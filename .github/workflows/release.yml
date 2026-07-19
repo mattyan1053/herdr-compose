@@ -11,7 +11,6 @@ concurrency:
 
 permissions:
   contents: write
-  pull-requests: read
 
 jobs:
   release:
@@ -19,38 +18,36 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      # Auto-bumps the version, creates the tag, and publishes a GitHub
-      # release with generated notes. Bump level defaults to patch and can
-      # be overridden per PR with a `release:minor` / `release:major` label.
-      # Add `[norelease]` to a commit title to skip a release.
-      - name: Release
-        id: release
-        uses: rymndhng/release-on-push-action@v0.28.0
         with:
-          bump_version_scheme: patch
-          tag_prefix: v
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
 
-      # Keep herdr-plugin.toml's version in sync with the release just made.
-      # The [skip ci] tag prevents this commit from re-triggering the workflow.
-      - name: Sync herdr-plugin.toml version
-        if: steps.release.outputs.version != ''
-        env:
-          VERSION: ${{ steps.release.outputs.version }}
+      - name: Read version from herdr-plugin.toml
+        id: version
         run: |
           set -euo pipefail
-
-          sed -i -E "s/^version[[:space:]]*=[[:space:]]*\"[^\"]*\"/version = \"${VERSION}\"/" herdr-plugin.toml
-
-          if git diff --quiet -- herdr-plugin.toml; then
-            echo "herdr-plugin.toml already at ${VERSION}; nothing to commit."
-            exit 0
+          version="$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' herdr-plugin.toml | head -n1)"
+          if [ -z "$version" ]; then
+            echo "::error::Could not read version from herdr-plugin.toml"
+            exit 1
           fi
 
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add herdr-plugin.toml
-          git commit -m "🔖 Bump herdr-plugin.toml to ${VERSION} [skip ci]"
-          git push origin HEAD:main
+          tag="v${version}"
+          if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
+            echo "Tag ${tag} already exists; version not bumped. Skipping release."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "New version ${version}; will release ${tag}."
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      # Creates the tag at the current main commit (which already contains the
+      # matching toml version) and publishes a release with auto-generated notes.
+      - name: Create tag and GitHub release
+        if: steps.version.outputs.release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
