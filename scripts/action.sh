@@ -26,7 +26,12 @@ if [[ -z "$dir" || ! -d "$dir" ]]; then
   exit 1
 fi
 
-run_compose() { (cd "$dir" && docker compose "$@"); }
+run_compose() {
+  if ! (cd "$dir" && docker compose "$@"); then
+    report_error "$ws"
+    exit 1
+  fi
+}
 
 case "$action" in
   up)    run_compose up -d ;;
@@ -36,6 +41,7 @@ case "$action" in
   toggle)
     if ! counts=$(compose_counts "$dir"); then
       echo "herdr-compose: no compose project in $dir" >&2
+      if has_compose_file "$dir"; then report_error "$ws"; fi
       exit 1
     fi
     running=${counts%%$'\t'*}

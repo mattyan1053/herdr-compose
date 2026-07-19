@@ -27,14 +27,16 @@ workspace_cwd() {
   local ws="${1:-${HERDR_WORKSPACE_ID:-}}" cwd=""
   if [[ -n "${HERDR_PLUGIN_CONTEXT_JSON:-}" ]]; then
     cwd=$(jq -r \
-      '[.. | objects | (.workspace_cwd? // .cwd? // .working_dir? // .path?) | strings] | first // empty' \
+      '[.. | objects | (.workspace_cwd? // .cwd? // .working_dir? // .path? // .worktree.checkout_path?) | strings] | first // empty' \
       <<<"$HERDR_PLUGIN_CONTEXT_JSON" 2>/dev/null || true)
   fi
+  # Workspace list entries carry no plain cwd, but worktree-backed workspaces
+  # expose worktree.checkout_path — enough to make the fallback useful.
   if [[ -z "$cwd" && -n "$ws" ]]; then
     cwd=$(herdr_cli workspace list 2>/dev/null \
       | jq -sr --arg ws "$ws" \
         '[.. | objects | select((.workspace_id? // .id?) == $ws)
-          | (.workspace_cwd? // .cwd? // .working_dir? // .path?) | strings] | first // empty' \
+          | (.workspace_cwd? // .cwd? // .working_dir? // .path? // .worktree.checkout_path?) | strings] | first // empty' \
       2>/dev/null || true)
   fi
   printf '%s' "$cwd"
@@ -71,15 +73,35 @@ compose_token() {
   fi
 }
 
+# Heuristic mirror of compose's default file discovery (current dir only) —
+# used to distinguish "no compose project" from "project present but broken"
+# (e.g. a worktree checkout missing its gitignored .env).
+has_compose_file() {
+  local d="$1" f
+  for f in compose.yaml compose.yml docker-compose.yaml docker-compose.yml; do
+    [[ -f "$d/$f" ]] && return 0
+  done
+  return 1
+}
+
 # Reports the sidebar token for a workspace. An empty value is sent when the
 # directory has no compose project — herdr hides unreported tokens, and empty
 # is the closest CLI approximation of clearing one (the socket API clears
 # with null; revisit if empty strings ever render as stray separators).
 report_status() {
   local ws="$1" dir="$2" value
-  value=$(compose_token "$dir") || value=""
+  if ! value=$(compose_token "$dir"); then
+    if has_compose_file "$dir"; then value="⚠ error"; else value=""; fi
+  fi
   herdr_cli workspace report-metadata "$ws" \
     --source "$SOURCE_NAME" --token "$TOKEN_NAME=$value" >/dev/null 2>&1 || true
+}
+
+# Failures inside herdr are otherwise invisible (no toast, log only), so
+# surface them in the sidebar; details stay in `herdr plugin log list`.
+report_error() {
+  herdr_cli workspace report-metadata "$1" \
+    --source "$SOURCE_NAME" --token "$TOKEN_NAME=⚠ error" >/dev/null 2>&1 || true
 }
 
 # ── project-name cache ───────────────────────────────────────────────────────

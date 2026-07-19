@@ -68,8 +68,11 @@ type = "plugin_action"
 command = "compose.down"
 ```
 
-すべてのアクションは workspace のアクションメニューからも実行できるので、
-キー割り当ては任意です。
+キーを割り当てていないアクションはシェルから実行できます:
+`herdr plugin action invoke compose.<action>` は、フォーカス中の workspace に
+対して実行されます。CLI は実行受付を JSON で表示し、アクション本体は非同期に
+走ります — 結果はサイドバーのトークンと
+`herdr plugin log list --plugin compose` で確認できます。
 
 ## アクション
 
@@ -100,6 +103,15 @@ worktree(シェルやエージェントによる `git worktree remove`、`rm -rf
 compose は `external: true` のボリュームを決して削除しないので、共有データは
 安全です。明示的な `compose.down` アクションは標準のセマンティクスのまま
 (ボリュームは残る)です。
+
+## トラブルシューティング
+
+- アクションが失敗すると、その space のトークンが `⚠ error` になり、詳細は
+  `herdr plugin log list --plugin compose` に残ります — herdr は失敗した
+  プラグインアクションのトーストを出さないため、確認先はトークンとログです。
+- 新しい worktree checkout でよくある失敗: `.env` などの gitignore された
+  ファイルは新しい checkout に存在しないため、compose が起動できません。
+  メインの checkout からコピーしてください。
 
 ## 注意点
 

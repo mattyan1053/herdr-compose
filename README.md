@@ -68,8 +68,11 @@ type = "plugin_action"
 command = "compose.down"
 ```
 
-All actions are also available from the workspace action menu, so keybindings
-are optional.
+Actions without a keybinding can be invoked from a shell instead:
+`herdr plugin action invoke compose.<action>` runs against the currently
+focused workspace. The CLI prints an invocation receipt as JSON and the
+action runs asynchronously — the outcome shows up in the sidebar token and
+in `herdr plugin log list --plugin compose`.
 
 ## Actions
 
@@ -99,6 +102,15 @@ never reattached anyway, and a later checkout of the same branch should start
 from a fresh database rather than inherit stale state. Compose never removes
 `external: true` volumes, so shared data is safe. The explicit `compose.down`
 action keeps standard semantics (volumes survive).
+
+## Troubleshooting
+
+- When an action fails, the space's token turns `⚠ error` and details land in
+  `herdr plugin log list --plugin compose` — herdr shows no toast for failed
+  plugin actions, so the token and the log are the places to look.
+- A common failure in fresh worktree checkouts: gitignored files such as
+  `.env` don't exist in the new checkout, so compose refuses to start. Copy
+  them over from the main checkout.
 
 ## Notes & caveats
 
