@@ -1,11 +1,30 @@
 id = "compose"
 name = "Compose"
-version = "0.1.0"
-min_herdr_version = "0.7.0"
+version = "0.2.0"
+min_herdr_version = "0.7.4"
 description = "Docker Compose status and start/stop/up/down for each space"
 platforms = ["linux", "macos"]
 
+# ── Interactive popup: a `docker compose ps` picker ──
+# Opened by the `ps` action below via `herdr plugin pane open`. herdr resolves
+# this relative command against the plugin root; scripts/tui.sh cds into the
+# workspace dir (passed as $HC_DIR) so compose targets the right project.
+
+[[panes]]
+id = "ps"
+title = "Compose ps"
+placement = "popup"
+# The leading ./ matters: without it herdr does a PATH lookup and fails to spawn.
+# With ./, herdr resolves the program against the plugin root.
+command = ["./scripts/tui.sh"]
+
 # ── Actions (bind via [[keys.command]] type = "plugin_action") ──
+
+[[actions]]
+id = "ps"
+title = "Compose: ps popup (logs / restart / start / stop / up / down)"
+contexts = ["workspace"]
+command = ["bash", "scripts/open-ps.sh"]
 
 [[actions]]
 id = "toggle"
