@@ -5,8 +5,10 @@ English | [日本語](README_ja.md)
 Docker Compose status and controls for each [herdr](https://herdr.dev) space.
 
 - Shows the compose project state of every space in the sidebar
-  (`⏵ 10` all running · `⏵ 8/10` partial · `⏸ 10` stopped · `⏹ down` no
-  containers · nothing at all when the workspace has no compose project).
+  (`⏵ 10/10` all running · `⏵ 8/10` partial · `⏸ 0/10` stopped ·
+  `⏹ down` no containers · nothing at all when the workspace has no compose
+  project). While an action runs the token shows the operation in progress
+  (`⏳ up…` / `⏳ stop…`), which matters when `up` sits in an image pull.
 - One keypress per space to `toggle` (stop if running, else start / `up -d`),
   plus explicit `up` / `start` / `stop` / `down` actions.
 - Tears the stack down automatically when a worktree checkout is removed
@@ -68,8 +70,11 @@ type = "plugin_action"
 command = "compose.down"
 ```
 
-All actions are also available from the workspace action menu, so keybindings
-are optional.
+Actions without a keybinding can be invoked from a shell instead:
+`herdr plugin action invoke compose.<action>` runs against the currently
+focused workspace. The CLI prints an invocation receipt as JSON and the
+action runs asynchronously — the outcome shows up in the sidebar token and
+in `herdr plugin log list --plugin compose`.
 
 ## Actions
 
@@ -90,15 +95,28 @@ Removing a worktree through herdr triggers an automatic
 (`git worktree remove` from a shell or an agent, `rm -rf`, herdr not running)
 emit no event, so their containers would leak. The `gc` sweep covers that
 case: any compose project whose labeled `working_dir` no longer exists on
-disk can never be `up`ed again, so it is torn down. GC runs automatically
-after worktree removals and at most every 10 minutes on workspace focus, and
-can be invoked manually as `compose.gc`.
+disk — or whose labeled compose files are all gone even though the directory
+survives — can never be `up`ed again, so it is torn down. The second
+criterion matters because worktree deletion can half-fail: containers that
+write root-owned files into bind mounts leave a directory herdr cannot
+delete (and no `worktree.removed` event fires on a failed removal). GC runs
+automatically after worktree removals and at most every 10 minutes on
+workspace focus, and can be invoked manually as `compose.gc`.
 
 Teardown of a dead checkout uses `down --volumes`: anonymous volumes are
 never reattached anyway, and a later checkout of the same branch should start
 from a fresh database rather than inherit stale state. Compose never removes
 `external: true` volumes, so shared data is safe. The explicit `compose.down`
 action keeps standard semantics (volumes survive).
+
+## Troubleshooting
+
+- When an action fails, the space's token turns `⚠ error` and details land in
+  `herdr plugin log list --plugin compose` — herdr shows no toast for failed
+  plugin actions, so the token and the log are the places to look.
+- A common failure in fresh worktree checkouts: gitignored files such as
+  `.env` don't exist in the new checkout, so compose refuses to start. Copy
+  them over from the main checkout.
 
 ## Notes & caveats
 

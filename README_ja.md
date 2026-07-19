@@ -5,8 +5,10 @@
 [herdr](https://herdr.dev) の各スペースに Docker Compose のステータス表示と操作を追加するプラグイン。
 
 - 各スペースの compose プロジェクトの状態をサイドバーに表示します
-  (`⏵ 10` 全部起動中 · `⏵ 8/10` 一部起動 · `⏸ 10` 停止中 · `⏹ down`
-  コンテナなし · compose プロジェクトを持たない workspace では何も表示しない)。
+  (`⏵ 10/10` 全部起動中 · `⏵ 8/10` 一部起動 · `⏸ 0/10` 停止中 ·
+  `⏹ down` コンテナなし · compose プロジェクトを持たない workspace では
+  何も表示しない)。アクションの実行中は進行中の操作が表示されます
+  (`⏳ up…` / `⏳ stop…`)— image の pull で `up` が長引くときに効きます。
 - スペースごとにキー1つで `toggle`(起動中なら stop、それ以外は start / `up -d`)。
   明示的な `up` / `start` / `stop` / `down` アクションも用意。
 - worktree の checkout が削除されたら自動でスタックを片付けます
@@ -68,8 +70,11 @@ type = "plugin_action"
 command = "compose.down"
 ```
 
-すべてのアクションは workspace のアクションメニューからも実行できるので、
-キー割り当ては任意です。
+キーを割り当てていないアクションはシェルから実行できます:
+`herdr plugin action invoke compose.<action>` は、フォーカス中の workspace に
+対して実行されます。CLI は実行受付を JSON で表示し、アクション本体は非同期に
+走ります — 結果はサイドバーのトークンと
+`herdr plugin log list --plugin compose` で確認できます。
 
 ## アクション
 
@@ -90,9 +95,14 @@ herdr 経由で worktree を削除した場合は自動的に
 worktree(シェルやエージェントによる `git worktree remove`、`rm -rf`、herdr
 停止中の削除)はイベントを発火しないため、コンテナが残ってしまいます。`gc` は
 このケースをカバーします: ラベルに記録された `working_dir` がディスク上に
-存在しない compose プロジェクトは二度と `up` できないため、片付けの対象に
-なります。GC は worktree 削除後と workspace フォーカス時(最大10分に1回)に
-自動実行され、`compose.gc` で手動実行もできます。
+存在しない、またはディレクトリは残っていても記録された compose ファイルが
+すべて消えているプロジェクトは、二度と `up` できないため片付けの対象に
+なります。後者の条件が重要なのは、worktree の削除が中途半端に失敗することが
+あるためです: コンテナが bind mount に root 所有のファイルを書くと、herdr が
+ディレクトリを消しきれず(失敗した削除では `worktree.removed` も発火しません)、
+残骸ディレクトリと稼働中コンテナが残ります。GC は worktree 削除後と
+workspace フォーカス時(最大10分に1回)に自動実行され、`compose.gc` で
+手動実行もできます。
 
 消滅した checkout の片付けには `down --volumes` を使います: 匿名ボリュームは
 どのみち再アタッチされることがなく、同じブランチを後日 checkout し直す場合も
@@ -100,6 +110,15 @@ worktree(シェルやエージェントによる `git worktree remove`、`rm -rf
 compose は `external: true` のボリュームを決して削除しないので、共有データは
 安全です。明示的な `compose.down` アクションは標準のセマンティクスのまま
 (ボリュームは残る)です。
+
+## トラブルシューティング
+
+- アクションが失敗すると、その space のトークンが `⚠ error` になり、詳細は
+  `herdr plugin log list --plugin compose` に残ります — herdr は失敗した
+  プラグインアクションのトーストを出さないため、確認先はトークンとログです。
+- 新しい worktree checkout でよくある失敗: `.env` などの gitignore された
+  ファイルは新しい checkout に存在しないため、compose が起動できません。
+  メインの checkout からコピーしてください。
 
 ## 注意点
 

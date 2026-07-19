@@ -14,25 +14,63 @@ herdr_cli() {
 
 state_dir() {
   local d="${HERDR_PLUGIN_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/herdr-compose}"
-  mkdir -p "$d/projects"
+  mkdir -p "$d/projects" "$d/inflight"
   printf '%s' "$d"
 }
 
+# ── in-flight operation markers ──────────────────────────────────────────────
+# While an action runs (up can sit in an image pull for minutes) the sidebar
+# should say what is happening (⏳ up…). The marker also stops concurrent
+# report_status calls (workspace.focused fires constantly) from overwriting
+# the transitional token with a half-true computed state. Timestamp inside
+# the file keeps it portable; stale markers (>30 min) are ignored in case a
+# script died without its EXIT trap.
+inflight_file() {
+  printf '%s/inflight/%s' "$(state_dir)" "$(path_key "$1")"
+}
+
+mark_inflight() {
+  printf '%s %s\n' "$(date +%s)" "$2" > "$(inflight_file "$1")"
+}
+
+clear_inflight() {
+  rm -f "$(inflight_file "$1")"
+}
+
+# Prints the in-flight operation name for a directory, or fails if none.
+inflight_op() {
+  local f ts op now
+  f=$(inflight_file "$1")
+  [[ -f "$f" ]] || return 1
+  # `read` exits nonzero on a file without a trailing newline — tolerate it.
+  read -r ts op < "$f" || true
+  now=$(date +%s)
+  if [[ -z "$op" || ! "$ts" =~ ^[0-9]+$ ]] || (( now - ts > 1800 )); then
+    rm -f "$f"
+    return 1
+  fi
+  printf '%s' "$op"
+}
+
 # ── workspace id → directory ─────────────────────────────────────────────────
-# Field names in the context JSON / workspace list are probed defensively
-# (cwd / working_dir / path) so minor schema differences don't break us.
+# herdr 0.7.x passes the workspace directory as a flat `workspace_cwd` field in
+# the context JSON (alongside focused_pane_cwd etc.); other spellings are kept
+# as fallbacks. `herdr workspace list` output carries no cwd today, so the
+# list-based fallback only helps if a future herdr adds one.
 workspace_cwd() {
   local ws="${1:-${HERDR_WORKSPACE_ID:-}}" cwd=""
   if [[ -n "${HERDR_PLUGIN_CONTEXT_JSON:-}" ]]; then
     cwd=$(jq -r \
-      '[.. | objects | (.cwd? // .working_dir? // .path?) | strings] | first // empty' \
+      '[.. | objects | (.workspace_cwd? // .cwd? // .working_dir? // .path? // .worktree.checkout_path?) | strings] | first // empty' \
       <<<"$HERDR_PLUGIN_CONTEXT_JSON" 2>/dev/null || true)
   fi
+  # Workspace list entries carry no plain cwd, but worktree-backed workspaces
+  # expose worktree.checkout_path — enough to make the fallback useful.
   if [[ -z "$cwd" && -n "$ws" ]]; then
-    cwd=$(herdr_cli workspace list --format json 2>/dev/null \
+    cwd=$(herdr_cli workspace list 2>/dev/null \
       | jq -sr --arg ws "$ws" \
-        '[.. | objects | select((.id? // .workspace_id?) == $ws)
-          | (.cwd? // .working_dir? // .path?) | strings] | first // empty' \
+        '[.. | objects | select((.workspace_id? // .id?) == $ws)
+          | (.workspace_cwd? // .cwd? // .working_dir? // .path? // .worktree.checkout_path?) | strings] | first // empty' \
       2>/dev/null || true)
   fi
   printf '%s' "$cwd"
@@ -53,6 +91,8 @@ compose_counts() {
     <<<"$out"
 }
 
+# Always running/total — the counts distinguish running (⏵ 2/2) from stopped
+# (⏸ 0/2) even where the small glyphs are hard to tell apart.
 compose_token() {
   local dir="$1" counts running total
   counts=$(compose_counts "$dir") || return 1
@@ -60,13 +100,22 @@ compose_token() {
   total=${counts##*$'\t'}
   if (( total == 0 )); then
     printf '⏹ down'
-  elif (( running == total )); then
-    printf '⏵ %d' "$total"
   elif (( running == 0 )); then
-    printf '⏸ %d' "$total"
+    printf '⏸ %d/%d' "$running" "$total"
   else
     printf '⏵ %d/%d' "$running" "$total"
   fi
+}
+
+# Heuristic mirror of compose's default file discovery (current dir only) —
+# used to distinguish "no compose project" from "project present but broken"
+# (e.g. a worktree checkout missing its gitignored .env).
+has_compose_file() {
+  local d="$1" f
+  for f in compose.yaml compose.yml docker-compose.yaml docker-compose.yml; do
+    [[ -f "$d/$f" ]] && return 0
+  done
+  return 1
 }
 
 # Reports the sidebar token for a workspace. An empty value is sent when the
@@ -74,10 +123,30 @@ compose_token() {
 # is the closest CLI approximation of clearing one (the socket API clears
 # with null; revisit if empty strings ever render as stray separators).
 report_status() {
-  local ws="$1" dir="$2" value
-  value=$(compose_token "$dir") || value=""
+  local ws="$1" dir="$2" value op
+  if op=$(inflight_op "$dir"); then
+    value="⏳ ${op}…"
+  elif ! value=$(compose_token "$dir"); then
+    if has_compose_file "$dir"; then value="⚠ error"; else value=""; fi
+  fi
   herdr_cli workspace report-metadata "$ws" \
     --source "$SOURCE_NAME" --token "$TOKEN_NAME=$value" >/dev/null 2>&1 || true
+}
+
+# Marks an operation as running and shows it in the sidebar immediately.
+# Callers must clear_inflight afterwards (action.sh does it via an EXIT trap).
+report_inflight() {
+  local ws="$1" dir="$2" op="$3"
+  mark_inflight "$dir" "$op"
+  herdr_cli workspace report-metadata "$ws" \
+    --source "$SOURCE_NAME" --token "$TOKEN_NAME=⏳ ${op}…" >/dev/null 2>&1 || true
+}
+
+# Failures inside herdr are otherwise invisible (no toast, log only), so
+# surface them in the sidebar; details stay in `herdr plugin log list`.
+report_error() {
+  herdr_cli workspace report-metadata "$1" \
+    --source "$SOURCE_NAME" --token "$TOKEN_NAME=⚠ error" >/dev/null 2>&1 || true
 }
 
 # ── project-name cache ───────────────────────────────────────────────────────
@@ -112,20 +181,38 @@ cached_project_name() {
 # ── orphan GC ────────────────────────────────────────────────────────────────
 # Worktrees removed outside herdr (plain `git worktree remove`, rm -rf, herdr
 # not running) never emit worktree.removed, so their containers leak. Compose
-# stamps every container with its project working_dir label; a project whose
-# working_dir no longer exists on disk cannot be `up`ed again and is safe to
-# tear down. Volumes go too (-v): the checkout is gone for good, and a later
-# same-name checkout should start fresh. External volumes are never removed
-# by compose, so shared data is safe.
+# stamps every container with its project working_dir and config_files labels;
+# a project is an orphan when its working_dir is gone, or when the directory
+# survives but none of its compose files do — the latter happens when a
+# worktree deletion half-fails because containers wrote root-owned files into
+# bind mounts (herdr then can't rm the directory and never emits
+# worktree.removed). Either way the project cannot be `up`ed again and is
+# safe to tear down. Volumes go too (-v): the checkout is gone for good, and
+# a later same-name checkout should start fresh. External volumes are never
+# removed by compose, so shared data is safe.
 compose_gc() {
   docker ps -a \
-    --format '{{.Label "com.docker.compose.project"}}\t{{.Label "com.docker.compose.project.working_dir"}}' \
-    2>/dev/null | sort -u | while IFS=$'\t' read -r name wdir; do
+    --format '{{.Label "com.docker.compose.project"}}\t{{.Label "com.docker.compose.project.working_dir"}}\t{{.Label "com.docker.compose.project.config_files"}}' \
+    2>/dev/null | sort -u | while IFS=$'\t' read -r name wdir cfgs; do
       [[ -n "$name" && -n "$wdir" ]] || continue
-      [[ -d "$wdir" ]] && continue
+      if [[ -d "$wdir" ]] && compose_config_present "$cfgs"; then continue; fi
       docker compose -p "$name" down --volumes --remove-orphans >/dev/null 2>&1 || true
       rm -f "$(state_dir)/projects/$(path_key "$wdir")"
     done
+}
+
+# config_files is a comma-separated path list. "Present" when at least one
+# listed file still exists; an empty label counts as present so projects
+# started in exotic ways (stdin config, very old compose) are never reaped
+# while their directory is alive.
+compose_config_present() {
+  local cfgs="$1" f
+  [[ -n "$cfgs" ]] || return 0
+  local IFS=','
+  for f in $cfgs; do
+    [[ -f "$f" ]] && return 0
+  done
+  return 1
 }
 
 # Focus events fire constantly; sweep at most every 10 minutes.
