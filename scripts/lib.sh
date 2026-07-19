@@ -19,20 +19,22 @@ state_dir() {
 }
 
 # ── workspace id → directory ─────────────────────────────────────────────────
-# Field names in the context JSON / workspace list are probed defensively
-# (cwd / working_dir / path) so minor schema differences don't break us.
+# herdr 0.7.x passes the workspace directory as a flat `workspace_cwd` field in
+# the context JSON (alongside focused_pane_cwd etc.); other spellings are kept
+# as fallbacks. `herdr workspace list` output carries no cwd today, so the
+# list-based fallback only helps if a future herdr adds one.
 workspace_cwd() {
   local ws="${1:-${HERDR_WORKSPACE_ID:-}}" cwd=""
   if [[ -n "${HERDR_PLUGIN_CONTEXT_JSON:-}" ]]; then
     cwd=$(jq -r \
-      '[.. | objects | (.cwd? // .working_dir? // .path?) | strings] | first // empty' \
+      '[.. | objects | (.workspace_cwd? // .cwd? // .working_dir? // .path?) | strings] | first // empty' \
       <<<"$HERDR_PLUGIN_CONTEXT_JSON" 2>/dev/null || true)
   fi
   if [[ -z "$cwd" && -n "$ws" ]]; then
-    cwd=$(herdr_cli workspace list --format json 2>/dev/null \
+    cwd=$(herdr_cli workspace list 2>/dev/null \
       | jq -sr --arg ws "$ws" \
-        '[.. | objects | select((.id? // .workspace_id?) == $ws)
-          | (.cwd? // .working_dir? // .path?) | strings] | first // empty' \
+        '[.. | objects | select((.workspace_id? // .id?) == $ws)
+          | (.workspace_cwd? // .cwd? // .working_dir? // .path?) | strings] | first // empty' \
       2>/dev/null || true)
   fi
   printf '%s' "$cwd"
