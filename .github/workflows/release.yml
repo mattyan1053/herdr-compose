@@ -17,13 +17,40 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       # Auto-bumps the version, creates the tag, and publishes a GitHub
       # release with generated notes. Bump level defaults to patch and can
       # be overridden per PR with a `release:minor` / `release:major` label.
       # Add `[norelease]` to a commit title to skip a release.
-      - uses: rymndhng/release-on-push-action@v0.28.0
+      - name: Release
+        id: release
+        uses: rymndhng/release-on-push-action@v0.28.0
         with:
           bump_version_scheme: patch
           tag_prefix: v
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Keep herdr-plugin.toml's version in sync with the release just made.
+      # The [skip ci] tag prevents this commit from re-triggering the workflow.
+      - name: Sync herdr-plugin.toml version
+        if: steps.release.outputs.version != ''
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          sed -i -E "s/^version[[:space:]]*=[[:space:]]*\"[^\"]*\"/version = \"${VERSION}\"/" herdr-plugin.toml
+
+          if git diff --quiet -- herdr-plugin.toml; then
+            echo "herdr-plugin.toml already at ${VERSION}; nothing to commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add herdr-plugin.toml
+          git commit -m "🔖 Bump herdr-plugin.toml to ${VERSION} [skip ci]"
+          git push origin HEAD:main
