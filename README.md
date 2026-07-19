@@ -5,8 +5,9 @@ English | [日本語](README_ja.md)
 Docker Compose status and controls for each [herdr](https://herdr.dev) space.
 
 - Shows the compose project state of every space in the sidebar
-  (`⏵ 10` all running · `⏵ 8/10` partial · `⏸ 10` stopped · `⏹ down` no
-  containers · nothing at all when the workspace has no compose project).
+  (`⏵ 10/10` all running · `⏵ 8/10` partial · `⏸ 0/10` stopped ·
+  `⏹ down` no containers · nothing at all when the workspace has no compose
+  project).
 - One keypress per space to `toggle` (stop if running, else start / `up -d`),
   plus explicit `up` / `start` / `stop` / `down` actions.
 - Tears the stack down automatically when a worktree checkout is removed

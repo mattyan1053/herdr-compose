@@ -57,6 +57,8 @@ compose_counts() {
     <<<"$out"
 }
 
+# Always running/total — the counts distinguish running (⏵ 2/2) from stopped
+# (⏸ 0/2) even where the small glyphs are hard to tell apart.
 compose_token() {
   local dir="$1" counts running total
   counts=$(compose_counts "$dir") || return 1
@@ -64,10 +66,8 @@ compose_token() {
   total=${counts##*$'\t'}
   if (( total == 0 )); then
     printf '⏹ down'
-  elif (( running == total )); then
-    printf '⏵ %d' "$total"
   elif (( running == 0 )); then
-    printf '⏸ %d' "$total"
+    printf '⏸ %d/%d' "$running" "$total"
   else
     printf '⏵ %d/%d' "$running" "$total"
   fi
