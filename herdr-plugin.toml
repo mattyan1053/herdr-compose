@@ -1,0 +1,72 @@
+id = "compose"
+name = "Compose"
+version = "0.1.0"
+min_herdr_version = "0.7.0"
+description = "Docker Compose status and start/stop/up/down for each space"
+platforms = ["linux", "macos"]
+
+# ── Actions (bind via [[keys.command]] type = "plugin_action") ──
+
+[[actions]]
+id = "toggle"
+title = "Compose: toggle (stop if running, else start/up)"
+contexts = ["workspace"]
+command = ["bash", "scripts/action.sh", "toggle"]
+
+[[actions]]
+id = "up"
+title = "Compose: up -d"
+contexts = ["workspace"]
+command = ["bash", "scripts/action.sh", "up"]
+
+[[actions]]
+id = "start"
+title = "Compose: start"
+contexts = ["workspace"]
+command = ["bash", "scripts/action.sh", "start"]
+
+[[actions]]
+id = "stop"
+title = "Compose: stop"
+contexts = ["workspace"]
+command = ["bash", "scripts/action.sh", "stop"]
+
+[[actions]]
+id = "down"
+title = "Compose: down (remove containers)"
+contexts = ["workspace"]
+command = ["bash", "scripts/action.sh", "down"]
+
+[[actions]]
+id = "refresh"
+title = "Compose: refresh status"
+contexts = ["workspace"]
+command = ["bash", "scripts/action.sh", "refresh"]
+
+[[actions]]
+id = "gc"
+title = "Compose: gc orphaned projects (deleted worktrees)"
+contexts = ["workspace"]
+command = ["bash", "scripts/action.sh", "gc"]
+
+# ── Event hooks: keep the sidebar token fresh, clean up removed worktrees ──
+
+[[events]]
+on = "workspace.created"
+command = ["bash", "scripts/event.sh"]
+
+[[events]]
+on = "workspace.focused"
+command = ["bash", "scripts/event.sh"]
+
+[[events]]
+on = "worktree.created"
+command = ["bash", "scripts/event.sh"]
+
+[[events]]
+on = "worktree.opened"
+command = ["bash", "scripts/event.sh"]
+
+[[events]]
+on = "worktree.removed"
+command = ["bash", "scripts/event.sh"]
