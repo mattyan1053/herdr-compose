@@ -2,6 +2,11 @@
 
 [English](README.md) | 日本語
 
+[![CI](https://github.com/mattyan1053/herdr-compose/actions/workflows/ci.yml/badge.svg)](https://github.com/mattyan1053/herdr-compose/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/mattyan1053/herdr-compose?sort=semver)](https://github.com/mattyan1053/herdr-compose/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![herdr ≥ 0.7.4](https://img.shields.io/badge/herdr-%E2%89%A5%200.7.4-6f42c1.svg)](https://herdr.dev)
+
 [herdr](https://herdr.dev) の各スペースに Docker Compose のステータス表示と操作を追加するプラグイン。
 
 - 各スペースの compose プロジェクトの状態をサイドバーに表示します
@@ -183,6 +188,16 @@ compose は `external: true` のボリュームを決して削除しないので
 - コンテキスト/ペイロード JSON のフィールド名(`cwd`, `path`, `workspace_id`
   など)は、ありそうな綴りを順に試す防御的な実装にしています。お使いの herdr
   のバージョンで名前が異なる場合は `scripts/lib.sh` を確認してください。
+
+## 開発
+
+```bash
+shellcheck -x --severity=warning scripts/*.sh   # lint
+bats tests/                                       # テスト（Docker 不要）
+```
+
+テストは `docker` と `herdr` をスタブするので、デーモンなしで実行できます。
+プロジェクト構成と規約は [CONTRIBUTING.md](CONTRIBUTING.md) を参照してください。
 
 ## ライセンス
 

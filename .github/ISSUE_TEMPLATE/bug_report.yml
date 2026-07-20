@@ -1,0 +1,54 @@
+name: Bug report
+description: Something in herdr-compose behaves incorrectly
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. The sidebar token and
+        `herdr plugin log list --plugin compose` are the two places where this
+        plugin surfaces failures — please include the relevant log lines.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you see, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Focus a space with a compose project
+        2. Press the toggle keybinding
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Plugin log
+      description: Output of `herdr plugin log list --plugin compose` around the failure.
+      render: shell
+  - type: input
+    id: herdr-version
+    attributes:
+      label: herdr version
+      placeholder: "0.7.4"
+    validations:
+      required: true
+  - type: input
+    id: compose-version
+    attributes:
+      label: Docker Compose version
+      description: Output of `docker compose version`.
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      placeholder: "macOS 15.5 / Ubuntu 24.04"
+    validations:
+      required: true
