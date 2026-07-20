@@ -2,6 +2,11 @@
 
 English | [日本語](README_ja.md)
 
+[![CI](https://github.com/mattyan1053/herdr-compose/actions/workflows/ci.yml/badge.svg)](https://github.com/mattyan1053/herdr-compose/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/mattyan1053/herdr-compose?sort=semver)](https://github.com/mattyan1053/herdr-compose/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![herdr ≥ 0.7.4](https://img.shields.io/badge/herdr-%E2%89%A5%200.7.4-6f42c1.svg)](https://herdr.dev)
+
 Docker Compose status and controls for each [herdr](https://herdr.dev) space.
 
 - Shows the compose project state of every space in the sidebar
@@ -181,6 +186,16 @@ action keeps standard semantics (volumes survive).
 - The context/payload JSON field names (`cwd`, `path`, `workspace_id`, …) are
   probed defensively against a few likely spellings. If your herdr version
   uses different names, `scripts/lib.sh` is the place to look.
+
+## Development
+
+```bash
+shellcheck -x --severity=warning scripts/*.sh   # lint
+bats tests/                                       # test (no Docker needed)
+```
+
+The tests stub `docker` and `herdr`, so they run without a daemon. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the project layout and conventions.
 
 ## License
 
